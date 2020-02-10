@@ -7,8 +7,8 @@ use num_complex::Complex64;
 mod generator;
 mod output;
 
-const WIDTH: u32 = 160;
-const HEIGHT: u32 = 90;
+const WIDTH: u32 = 1280;
+const HEIGHT: u32 = 720;
 const FRAMES: u32 = 300;
 const PLANE_WIDTH: f64 = 3f64;
 const IMAGE_SCALE: f64 = PLANE_WIDTH / WIDTH as f64;
@@ -27,7 +27,7 @@ fn main() {
 
         let c_offset = frame_num as f64 / FRAMES as f64 * 2f64 - 1f64;
         let c = Complex64::new(c_offset, c_offset);
-        let generator = generator::ValueGenerator::new(IMAGE_SCALE, IMAGE_SCALE, PLANE_START_X, PLANE_START_Y, false, 500, c);
+        let generator = generator::ValueGenerator::new(IMAGE_SCALE, IMAGE_SCALE, PLANE_START_X, PLANE_START_Y, false, 100, c);
 
         let frame_data = frame.data_mut(0);
         let fractal_image = generator::generate_fractal(&generator, WIDTH, HEIGHT, num_cpus::get() + 2, |progress| {

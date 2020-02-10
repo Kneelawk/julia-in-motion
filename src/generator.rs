@@ -1,14 +1,16 @@
 use num_complex::Complex;
 use std::{
     intrinsics::transmute,
-    mem::replace,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        mpsc::{channel, Sender},
+        Arc, Mutex, RwLock,
+    },
     thread,
-    thread::{spawn, JoinHandle},
-    time::Duration,
+    thread::JoinHandle,
+    time::{Duration, Instant},
 };
 
-const WAIT_DURATION: Duration = Duration::from_millis(100);
+const WAIT_DURATION: Duration = Duration::from_millis(1000);
 
 #[derive(Debug, Clone)]
 pub struct ValueGenerator {
@@ -25,7 +27,7 @@ pub struct FractalThread {
     name: String,
     progress: RwLock<f32>,
     state: RwLock<FractalThreadState>,
-    thread: Mutex<Option<JoinHandle<Box<[u8]>>>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -33,12 +35,6 @@ pub enum FractalThreadState {
     NotStarted,
     Running,
     Finished,
-    Error,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum FractalThreadError {
-    NoResult,
 }
 
 #[repr(C)]
@@ -48,6 +44,12 @@ pub struct RGBAColor {
     pub g: u8,
     pub b: u8,
     pub a: u8,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FractalThreadMessage {
+    index: usize,
+    color: RGBAColor,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -66,44 +68,47 @@ pub fn generate_fractal<P: Fn(Vec<f32>)>(
         threads.push(FractalThread::new(format!("Fractal Thread {}", i)));
     }
 
-    let left_over = height as usize % num_threads;
+    let rx = {
+        let (tx, rx) = channel();
+        let left_over = width as usize * height as usize % num_threads;
 
-    // start all the threads
-    let mut offset = 0;
-    for (index, thread) in threads.iter().enumerate() {
-        let mut sub_generator = generator.clone();
-        sub_generator.plane_zero_y += offset as f64 * generator.img_scale_y;
-        let chunk_height = height as usize / num_threads + if index < left_over { 1 } else { 0 };
-        thread.start_generation(width, chunk_height * width as usize, &sub_generator);
-        offset += chunk_height;
-    }
-
-    let mut running = true;
-
-    while running {
-        running = false;
-        let mut thread_progress = vec![];
-
-        for thread in threads.iter() {
-            thread_progress.push(thread.get_progress());
-
-            if thread.get_state() == FractalThreadState::Running {
-                running = true;
-            }
+        // start all the threads
+        for (index, thread) in threads.iter().enumerate() {
+            let chunk_height = width as usize * height as usize / num_threads
+                + if index < left_over { 1 } else { 0 };
+            thread.start_generation(
+                tx.clone(),
+                width,
+                chunk_height,
+                index,
+                num_threads,
+                &generator,
+            );
         }
 
-        progress_callback(thread_progress);
-
-        thread::sleep(WAIT_DURATION);
-    }
+        rx
+    };
 
     let mut image = vec![0u8; (width * height * 4) as usize].into_boxed_slice();
 
-    let mut offset = 0usize;
-    for thread in threads.iter() {
-        let chunk = thread.generation_result().unwrap();
-        image[offset..(offset + chunk.len())].copy_from_slice(&chunk);
-        offset += chunk.len();
+    let mut previous_progress = Instant::now();
+
+    for message in rx {
+        let FractalThreadMessage { index, color } = message;
+        image[index * 4..index * 4 + 4].copy_from_slice(&Into::<[u8; 4]>::into(color));
+
+        // send progress reports every now and then
+        let now = Instant::now();
+        if now.saturating_duration_since(previous_progress) > WAIT_DURATION {
+            let mut thread_progress = vec![];
+            for thread in threads.iter() {
+                thread_progress.push(thread.get_progress());
+            }
+
+            progress_callback(thread_progress);
+
+            previous_progress = now;
+        }
     }
 
     Ok(image)
@@ -190,8 +195,11 @@ impl FractalThread {
 
     pub fn start_generation(
         self: &Arc<Self>,
+        img_data: Sender<FractalThreadMessage>,
         chunk_width: u32,
         size: usize,
+        offset: usize,
+        skip: usize,
         generator: &ValueGenerator,
     ) {
         let mut state = self.state.write().unwrap();
@@ -203,43 +211,43 @@ impl FractalThread {
             *self.thread.lock().unwrap() = Some(
                 thread::Builder::new()
                     .name(self.name.clone())
-                    .spawn(move || clone.image_thread_func(chunk_width, size, generator))
+                    .spawn(move || {
+                        clone.image_thread_func(
+                            img_data,
+                            chunk_width,
+                            size,
+                            offset,
+                            skip,
+                            generator,
+                        )
+                    })
                     .expect("Unable to spawn fractal thread"),
             );
         }
     }
 
-    pub fn generation_result(&self) -> Result<Box<[u8]>, FractalThreadError> {
-        let mut thread = self.thread.lock().unwrap();
-        if thread.is_some() {
-            let thread = replace(&mut *thread, None);
-            Ok(thread.unwrap().join().unwrap())
-        } else {
-            Err(FractalThreadError::NoResult)
-        }
-    }
-
     fn image_thread_func(
         &self,
+        img_data: Sender<FractalThreadMessage>,
         chunk_width: u32,
         size: usize,
+        offset: usize,
+        skip: usize,
         generator: ValueGenerator,
-    ) -> Box<[u8]> {
-        let mut img_data = vec![0; size * 4].into_boxed_slice();
-
+    ) {
         for i in 0usize..size {
-            let x = (i % chunk_width as usize) as u32;
-            let y = (i / chunk_width as usize) as u32;
+            let index = i * skip + offset;
+
+            let x = (index % chunk_width as usize) as u32;
+            let y = (index / chunk_width as usize) as u32;
 
             let color = generator.gen_pixel(x, y);
-            img_data[(i * 4)..(i * 4 + 4)].copy_from_slice(&Into::<[u8; 4]>::into(color));
+            img_data.send(FractalThreadMessage { index, color }).unwrap();
 
             *self.progress.write().unwrap() = (i + 1) as f32 / size as f32;
         }
 
         *self.state.write().unwrap() = FractalThreadState::Finished;
-
-        img_data
     }
 
     pub fn get_progress(&self) -> f32 {

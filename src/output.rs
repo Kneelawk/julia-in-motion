@@ -34,7 +34,7 @@ impl MediaOutput {
 
         encoder.set_frame_rate(Some((30, 1)));
         encoder.set_format(format::Pixel::YUV420P);
-        encoder.set_bit_rate(480000);
+        encoder.set_bit_rate(960000);
         encoder.set_width(width);
         encoder.set_height(height);
         encoder.set_time_base(time_base);
