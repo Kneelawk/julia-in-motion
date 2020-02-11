@@ -1,0 +1,46 @@
+name: julia-in-motion
+author: Kneelawk, Jed Pommert <kneelawk@gmail.com>
+about: Generates a movie of a changing Julia set
+args:
+  - image_width:
+      short: w
+      long: image-width
+      value_name: WIDTH
+      help: Sets the width of the generated video in pixels.
+      takes_value: true
+      required: true
+  - image_height:
+      short: h
+      long: image-height
+      value_name: HEIGHT
+      help: Sets the height of the generated video in pixels.
+      takes_value: true
+      required: true
+  - frames:
+      short: f
+      long: frames
+      value_name: FRAME_COUNT
+      help: >-
+        Sets the number of frames in the generated video. This is used to determine the video's length.
+      takes_value: true
+      required: true
+  - plane_width:
+      short: W
+      long: plane-width
+      value_name: WIDTH
+      help: Sets the width of the area of the complex plane covered by the video.
+      takes_value: true
+      required: true
+  - path:
+      short: p
+      long: path
+      value_name: PATH
+      help: >-
+        Sets the path along the Mandelbrot set on the complex plane for the video of the Julia set to follow.
+      takes_value: true
+      required: true
+  - mandelbrot:
+      short: m
+      long: mandelbrot
+      help: >-
+        Generates a video of cross-hairs tracing a path along a Mandelbrot set instead of a Julia set tracing that path.
