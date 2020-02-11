@@ -6,6 +6,8 @@ pub struct MediaOutput {
     encoder: codec::encoder::Video,
     converter: software::scaling::Context,
     in_time_base: Rational,
+    converted: frame::Video,
+    encoded: Packet,
 }
 
 impl MediaOutput {
@@ -52,6 +54,8 @@ impl MediaOutput {
             encoder,
             converter,
             in_time_base: time_base,
+            converted: frame::Video::empty(),
+            encoded: Packet::empty(),
         })
     }
 
@@ -65,19 +69,16 @@ impl MediaOutput {
         &mut self,
         frame: &frame::Video,
     ) -> Result<MediaWriteResult, MediaWriteError> {
-        let mut converted = frame::Video::empty();
-        let mut encoded = Packet::empty();
+        self.converter.run(frame, &mut self.converted)?;
 
-        self.converter.run(frame, &mut converted)?;
-
-        if self.encoder.encode(&converted, &mut encoded)? {
-            encoded.set_pts(frame.pts());
-            encoded.set_stream(0);
-            encoded.rescale_ts(
+        if self.encoder.encode(&self.converted, &mut self.encoded)? {
+            self.encoded.set_pts(frame.pts());
+            self.encoded.set_stream(0);
+            self.encoded.rescale_ts(
                 self.in_time_base,
                 self.format_context.stream(0)?.time_base(),
             );
-            encoded.write_interleaved(&mut self.format_context)?;
+            self.encoded.write_interleaved(&mut self.format_context)?;
 
             Ok(MediaWriteResult::PacketWritten)
         } else {
@@ -86,15 +87,13 @@ impl MediaOutput {
     }
 
     pub fn finish(&mut self) -> Result<MediaWriteResult, MediaWriteError> {
-        let mut encoded = Packet::empty();
-
-        let res = if self.encoder.flush(&mut encoded)? {
-            encoded.set_stream(0);
-            encoded.rescale_ts(
+        let res = if self.encoder.flush(&mut self.encoded)? {
+            self.encoded.set_stream(0);
+            self.encoded.rescale_ts(
                 self.in_time_base,
                 self.format_context.stream(0)?.time_base(),
             );
-            encoded.write_interleaved(&mut self.format_context)?;
+            self.encoded.write_interleaved(&mut self.format_context)?;
 
             MediaWriteResult::PacketWritten
         } else {
