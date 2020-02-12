@@ -65,7 +65,7 @@ impl FractalInfo {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ConstrainedValue<T> {
     LessThanConstraint,
     WithinConstraint(T),

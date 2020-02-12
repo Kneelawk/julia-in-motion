@@ -4,6 +4,7 @@ use ffmpeg4::{format, frame};
 use lyon_algorithms::{walk, walk::RegularPattern};
 use lyon_path::iterator::PathIterator;
 use num_complex::Complex;
+use rusttype::{Font, Scale};
 use std::{
     fs::create_dir_all,
     path::Path,
@@ -14,7 +15,10 @@ mod fractal_info;
 mod generator;
 mod output;
 mod path_length;
+mod raster;
 mod util;
+
+const FONT_DATA: &[u8] = include_bytes!("OxygenMono-Regular.ttf");
 
 fn main() {
     // load up option parser
@@ -110,6 +114,8 @@ fn main() {
     // get the length of each step
     let step_length = path_length / frames as f32;
 
+    let font = Font::from_bytes(FONT_DATA).expect("Error loading font");
+
     let video_progress_callback = |frame_num| {
         println!("Generated {} frames out of {}", frame_num, frames);
     };
@@ -126,6 +132,7 @@ fn main() {
     if mandelbrot {
         render_mandelbrot(
             fractal_info,
+            &font,
             &mut media_out,
             path,
             path_tolerance,
@@ -158,6 +165,7 @@ fn main() {
 /// it.
 fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
     info: fractal_info::FractalInfo,
+    font: &Font,
     media_out: &mut output::MediaOutput,
     path: lyon_path::Path,
     path_tolerance: f32,
@@ -196,10 +204,26 @@ fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
             frame.set_pts(Some(frame_num as i64));
             let mut current_image = mandelbrot_image.clone();
 
-            draw_crosshair(
+            let complex = Complex::<f64>::new(position.x as f64, position.y as f64);
+            let (pixel_x, pixel_y) = info.get_pixel_coordinates(complex);
+
+            raster::draw_constrained_crosshair(
                 &mut current_image,
-                info,
-                Complex::<f64>::new(position.x as f64, position.y as f64),
+                info.image_width,
+                info.image_height,
+                (pixel_x, pixel_y),
+            );
+
+            let complex_str = format!("{}", complex);
+            raster::draw_constrained_glyph_line(
+                &mut current_image,
+                info.image_width,
+                info.image_height,
+                font,
+                Scale::uniform(12f32),
+                (pixel_x, pixel_y),
+                4f32,
+                &complex_str,
             );
 
             frame.data_mut(0).copy_from_slice(&current_image);
@@ -287,34 +311,4 @@ fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
     };
 
     walk::walk_along_path(path.iter().flattened(path_tolerance), 0f32, &mut pattern);
-}
-
-/// Draws a crosshair at the specified location in the complex plane onto a u8
-/// buffer representing an RGBA image.
-fn draw_crosshair(
-    image: &mut [u8],
-    info: fractal_info::FractalInfo,
-    crosshair_coordinates: Complex<f64>,
-) {
-    let (pixel_x, pixel_y) = info.get_pixel_coordinates(crosshair_coordinates);
-
-    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_y) = pixel_y {
-        for x in 0..info.image_width as usize {
-            let index = (pixel_y as usize * info.image_width as usize + x) * 4;
-            image[index] = 0xFFu8;
-            image[index + 1] = 0xFFu8;
-            image[index + 2] = 0xFFu8;
-            image[index + 3] = 0xFFu8;
-        }
-    }
-
-    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_x) = pixel_x {
-        for y in 0..info.image_height as usize {
-            let index = (y * info.image_width as usize + pixel_x as usize) * 4;
-            image[index] = 0xFFu8;
-            image[index + 1] = 0xFFu8;
-            image[index + 2] = 0xFFu8;
-            image[index + 3] = 0xFFu8;
-        }
-    }
 }
