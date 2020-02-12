@@ -121,28 +121,28 @@ pub fn draw_glyph_line(
     margin: f32,
     string: &str,
 ) {
+    let ascent = font.v_metrics(scale).ascent;
+
     for glyph in font.layout(
         string,
         scale,
-        Point::<f32> {
-            x: x as f32 + margin,
-            y: y as f32 + margin,
-        },
+        rusttype::point(x as f32 + margin, y as f32 + margin + ascent),
     ) {
-        let position = glyph.position();
-        glyph.draw(|x, y, c| {
-            let pixel_x = x + position.x as u32;
-            let pixel_y = y + position.y as u32;
-            if pixel_x < image_width && pixel_y < image_height {
-                let index = ((pixel_y * image_width + pixel_x) * 4) as usize;
-                let value = (255f32 * c) as u8;
-                let back = 1f32 - c;
-                image[index] = value + (back * image[index] as f32) as u8;
-                image[index + 1] = value + (back * image[index + 1] as f32) as u8;
-                image[index + 2] = value + (back * image[index + 2] as f32) as u8;
-                image[index + 3] = value + (back * image[index + 3] as f32) as u8;
-            }
-        });
+        if let Some(bounding_box) = glyph.pixel_bounding_box() {
+            glyph.draw(|x, y, c| {
+                let pixel_x = x + bounding_box.min.x as u32;
+                let pixel_y = y + bounding_box.min.y as u32;
+                if pixel_x < image_width && pixel_y < image_height {
+                    let index = ((pixel_y * image_width + pixel_x) * 4) as usize;
+                    let value = (255f32 * c) as u8;
+                    let back = 1f32 - c;
+                    image[index] = value + (back * image[index] as f32) as u8;
+                    image[index + 1] = value + (back * image[index + 1] as f32) as u8;
+                    image[index + 2] = value + (back * image[index + 2] as f32) as u8;
+                    image[index + 3] = value + (back * image[index + 3] as f32) as u8;
+                }
+            });
+        }
     }
 }
 
