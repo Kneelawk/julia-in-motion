@@ -10,67 +10,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod fractal_info;
 mod generator;
 mod output;
 mod path_length;
 mod util;
-
-#[derive(Copy, Clone)]
-struct FractalValues {
-    pub image_width: u32,
-    pub image_height: u32,
-    pub plane_width: f64,
-    pub plane_height: f64,
-    pub image_scale: f64,
-    pub plane_start_x: f64,
-    pub plane_start_y: f64,
-    pub iterations: u32,
-}
-
-impl FractalValues {
-    pub fn new(
-        image_width: u32,
-        image_height: u32,
-        plane_width: f64,
-        iterations: u32,
-    ) -> FractalValues {
-        let image_scale = plane_width / image_width as f64;
-        let plane_height = image_height as f64 * image_scale;
-
-        FractalValues {
-            image_width,
-            image_height,
-            plane_width,
-            plane_height,
-            image_scale,
-            plane_start_x: -plane_width / 2f64,
-            plane_start_y: -plane_height / 2f64,
-            iterations,
-        }
-    }
-
-    pub fn get_pixel_coordinates(
-        &self,
-        plane_coordinates: Complex<f64>,
-    ) -> (Option<u32>, Option<u32>) {
-        (
-            if plane_coordinates.re > self.plane_start_x
-                && plane_coordinates.re < self.plane_start_x + self.plane_width
-            {
-                Some(((plane_coordinates.re - self.plane_start_x) / self.image_scale) as u32)
-            } else {
-                None
-            },
-            if plane_coordinates.im > self.plane_start_y
-                && plane_coordinates.im < self.plane_start_y + self.plane_height
-            {
-                Some(((plane_coordinates.im - self.plane_start_y) / self.image_scale) as u32)
-            } else {
-                None
-            },
-        )
-    }
-}
 
 fn main() {
     // load up option parser
@@ -157,7 +101,8 @@ fn main() {
         .expect("Unable to open the media output");
     media_out.start().expect("Unable to start the media file");
 
-    let fractal_arguments = FractalValues::new(image_width, image_height, plane_width, iterations);
+    let fractal_info =
+        fractal_info::FractalInfo::new(image_width, image_height, plane_width, iterations);
 
     // walk along the path to determine its length
     let path_length = path_length::approximate_path_length(path.as_slice(), path_tolerance);
@@ -180,7 +125,7 @@ fn main() {
 
     if mandelbrot {
         render_mandelbrot(
-            fractal_arguments,
+            fractal_info,
             &mut media_out,
             path,
             path_tolerance,
@@ -192,7 +137,7 @@ fn main() {
         );
     } else {
         render_julia(
-            fractal_arguments,
+            fractal_info,
             &mut media_out,
             path,
             path_tolerance,
@@ -212,7 +157,7 @@ fn main() {
 /// Renders the video as a Mandelbrot set with crosshairs tracing a path along
 /// it.
 fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
-    vals: FractalValues,
+    info: fractal_info::FractalInfo,
     media_out: &mut output::MediaOutput,
     path: lyon_path::Path,
     path_tolerance: f32,
@@ -223,26 +168,26 @@ fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
     fractal_progress_callback: &F,
 ) {
     let generator = generator::ValueGenerator::new(
-        vals.image_scale,
-        vals.image_scale,
-        vals.plane_start_x,
-        vals.plane_start_y,
+        info.image_scale,
+        info.image_scale,
+        info.plane_start_x,
+        info.plane_start_y,
         true,
-        vals.iterations,
+        info.iterations,
         Complex::<f64>::new(0f64, 0f64),
     );
 
     let mandelbrot_image = generator::generate_fractal(
         &generator,
-        vals.image_width,
-        vals.image_height,
+        info.image_width,
+        info.image_height,
         num_cpus::get() + 2,
         fractal_progress_callback,
         fractal_progress_interval,
     )
     .expect("Error generating Mandelbrot set");
 
-    let mut frame = frame::Video::new(format::Pixel::RGBA, vals.image_width, vals.image_height);
+    let mut frame = frame::Video::new(format::Pixel::RGBA, info.image_width, info.image_height);
     let mut frame_num = 0;
     let mut previous_progress = Instant::now();
 
@@ -253,7 +198,7 @@ fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
 
             draw_crosshair(
                 &mut current_image,
-                vals,
+                info,
                 Complex::<f64>::new(position.x as f64, position.y as f64),
             );
 
@@ -283,7 +228,7 @@ fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
 /// Renders the video as a Julia set following the specified path along the
 /// Mandelbrot set.
 fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
-    vals: FractalValues,
+    info: fractal_info::FractalInfo,
     media_out: &mut output::MediaOutput,
     path: lyon_path::Path,
     path_tolerance: f32,
@@ -293,7 +238,7 @@ fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
     video_progress_callback: &V,
     fractal_progress_callback: &F,
 ) {
-    let mut frame = frame::Video::new(format::Pixel::RGBA, vals.image_width, vals.image_height);
+    let mut frame = frame::Video::new(format::Pixel::RGBA, info.image_width, info.image_height);
     let mut frame_num = 0;
     let mut previous_progress = Instant::now();
 
@@ -302,19 +247,19 @@ fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
             frame.set_pts(Some(frame_num as i64));
 
             let generator = generator::ValueGenerator::new(
-                vals.image_scale,
-                vals.image_scale,
-                vals.plane_start_x,
-                vals.plane_start_y,
+                info.image_scale,
+                info.image_scale,
+                info.plane_start_x,
+                info.plane_start_y,
                 false,
-                vals.iterations,
+                info.iterations,
                 Complex::<f64>::new(position.x as f64, position.y as f64),
             );
 
             let julia_image = generator::generate_fractal(
                 &generator,
-                vals.image_width,
-                vals.image_height,
+                info.image_width,
+                info.image_height,
                 num_cpus::get() + 2,
                 fractal_progress_callback,
                 fractal_progress_interval,
@@ -346,12 +291,16 @@ fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
 
 /// Draws a crosshair at the specified location in the complex plane onto a u8
 /// buffer representing an RGBA image.
-fn draw_crosshair(image: &mut [u8], vals: FractalValues, crosshair_coordinates: Complex<f64>) {
-    let (pixel_x, pixel_y) = vals.get_pixel_coordinates(crosshair_coordinates);
+fn draw_crosshair(
+    image: &mut [u8],
+    info: fractal_info::FractalInfo,
+    crosshair_coordinates: Complex<f64>,
+) {
+    let (pixel_x, pixel_y) = info.get_pixel_coordinates(crosshair_coordinates);
 
-    if let Some(pixel_y) = pixel_y {
-        for x in 0..vals.image_width as usize {
-            let index = (pixel_y as usize * vals.image_width as usize + x) * 4;
+    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_y) = pixel_y {
+        for x in 0..info.image_width as usize {
+            let index = (pixel_y as usize * info.image_width as usize + x) * 4;
             image[index] = 0xFFu8;
             image[index + 1] = 0xFFu8;
             image[index + 2] = 0xFFu8;
@@ -359,9 +308,9 @@ fn draw_crosshair(image: &mut [u8], vals: FractalValues, crosshair_coordinates: 
         }
     }
 
-    if let Some(pixel_x) = pixel_x {
-        for y in 0..vals.image_height as usize {
-            let index = (y * vals.image_width as usize + pixel_x as usize) * 4;
+    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_x) = pixel_x {
+        for y in 0..info.image_height as usize {
+            let index = (y * info.image_width as usize + pixel_x as usize) * 4;
             image[index] = 0xFFu8;
             image[index + 1] = 0xFFu8;
             image[index + 2] = 0xFFu8;
