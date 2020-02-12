@@ -159,10 +159,21 @@ impl ValueGenerator {
     }
 
     pub fn gen_pixel_value(&self, x: u32, y: u32) -> u32 {
-        self.gen_value(Complex::<f64>::new(
+        self.gen_value(self.get_plane_coordinates((x, y)))
+    }
+
+    pub fn get_pixel_coordinates(&self, plane_coordinates: Complex<f64>) -> (u32, u32) {
+        (
+            ((plane_coordinates.re - self.plane_zero_x) / self.img_scale_x) as u32,
+            ((plane_coordinates.im - self.plane_zero_y) / self.img_scale_y) as u32,
+        )
+    }
+
+    pub fn get_plane_coordinates(&self, (x, y): (u32, u32)) -> Complex<f64> {
+        Complex::<f64>::new(
             x as f64 * self.img_scale_x + self.plane_zero_x,
             y as f64 * self.img_scale_y + self.plane_zero_y,
-        ))
+        )
     }
 
     pub fn gen_color(&self, value: u32) -> RGBAColor {
@@ -242,7 +253,9 @@ impl FractalThread {
             let y = (index / chunk_width as usize) as u32;
 
             let color = generator.gen_pixel(x, y);
-            img_data.send(FractalThreadMessage { index, color }).unwrap();
+            img_data
+                .send(FractalThreadMessage { index, color })
+                .unwrap();
 
             *self.progress.write().unwrap() = (i + 1) as f32 / size as f32;
         }

@@ -34,11 +34,37 @@ args:
   - path:
       short: p
       long: path
-      value_name: PATH
+      value_name: SVG_PATH
       help: >-
-        Sets the path along the Mandelbrot set on the complex plane for the video of the Julia set to follow.
+        Sets the path along the Mandelbrot set on the complex plane for the video of the Julia set to follow. The path is specified using SVG path syntax.
       takes_value: true
       required: true
+  - output:
+      short: o
+      long: output
+      value_name: FILE
+      help: Sets the output path where the resulting video is stored.
+      takes_value: true
+      required: true
+  - fractal_progress_interval:
+      long: fractal-progress-interval
+      value_name: MILLISECONDS
+      help: How often should the program print progress reports on a slowly generating fractal?
+      takes_value: true
+      default_value: "1000"
+  - video_progress_interval:
+      long: video-progress-interval
+      value_name: MILLISECONDS
+      help: How often should the program print overall progress reports on the generation of the whole video?
+      takes_value: true
+      default_value: "1000"
+  - time_base:
+      short: t
+      long: time-base
+      value_name: FRACTION
+      help: Set the time-base of the output video. What is the number of seconds between each frame?
+      takes_value: true
+      default_value: "1/30"
   - mandelbrot:
       short: m
       long: mandelbrot
