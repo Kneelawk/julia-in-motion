@@ -1,21 +1,76 @@
 #![feature(try_trait)]
 
-use crate::generator::ValueGenerator;
-use ffmpeg4::{format::Pixel, frame};
-use num_complex::{Complex, Complex64};
-use std::{fs::create_dir_all, num::ParseIntError, path::Path};
+use ffmpeg4::{format, frame};
+use lyon_algorithms::{walk, walk::RegularPattern};
+use lyon_path::iterator::PathIterator;
+use num_complex::Complex;
+use std::{
+    fs::create_dir_all,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 mod generator;
 mod output;
+mod path_length;
 mod util;
 
-const WIDTH: u32 = 1280;
-const HEIGHT: u32 = 720;
-const FRAMES: u32 = 300;
-const PLANE_WIDTH: f64 = 3f64;
-const IMAGE_SCALE: f64 = PLANE_WIDTH / WIDTH as f64;
-const PLANE_START_X: f64 = -PLANE_WIDTH / 2f64;
-const PLANE_START_Y: f64 = -(HEIGHT as f64 * IMAGE_SCALE) / 2f64;
+#[derive(Copy, Clone)]
+struct FractalValues {
+    pub image_width: u32,
+    pub image_height: u32,
+    pub plane_width: f64,
+    pub plane_height: f64,
+    pub image_scale: f64,
+    pub plane_start_x: f64,
+    pub plane_start_y: f64,
+    pub iterations: u32,
+}
+
+impl FractalValues {
+    pub fn new(
+        image_width: u32,
+        image_height: u32,
+        plane_width: f64,
+        iterations: u32,
+    ) -> FractalValues {
+        let image_scale = plane_width / image_width as f64;
+        let plane_height = image_height as f64 * image_scale;
+
+        FractalValues {
+            image_width,
+            image_height,
+            plane_width,
+            plane_height,
+            image_scale,
+            plane_start_x: -plane_width / 2f64,
+            plane_start_y: -plane_height / 2f64,
+            iterations,
+        }
+    }
+
+    pub fn get_pixel_coordinates(
+        &self,
+        plane_coordinates: Complex<f64>,
+    ) -> (Option<u32>, Option<u32>) {
+        (
+            if plane_coordinates.re > self.plane_start_x
+                && plane_coordinates.re < self.plane_start_x + self.plane_width
+            {
+                Some(((plane_coordinates.re - self.plane_start_x) / self.image_scale) as u32)
+            } else {
+                None
+            },
+            if plane_coordinates.im > self.plane_start_y
+                && plane_coordinates.im < self.plane_start_y + self.plane_height
+            {
+                Some(((plane_coordinates.im - self.plane_start_y) / self.image_scale) as u32)
+            } else {
+                None
+            },
+        )
+    }
+}
 
 fn main() {
     // load up option parser
@@ -50,7 +105,7 @@ fn main() {
     let output = Path::new(matches.value_of("output").unwrap());
     if let Some(parent) = output.parent() {
         if !parent.exists() {
-            create_dir_all(parent);
+            create_dir_all(parent).expect("Unable to create video output parent directory");
         }
     }
 
@@ -61,104 +116,256 @@ fn main() {
         .expect("Unable to parse --path <SVG_PATH> using SVG path syntax");
 
     // get the optional arguments
-    let fractal_progress_interval = matches
-        .value_of("fractal_progress_interval")
+    let iterations = matches
+        .value_of("iterations")
         .unwrap()
         .parse::<u32>()
-        .expect(
-            "Unable to parse --fractal-progress-interval <MILLISECONDS> argument as an integer",
-        );
-    let video_progress_interval = matches
-        .value_of("video_progress_interval")
-        .unwrap()
-        .parse::<u32>()
-        .expect("Unable to parse --video-progress-interval <MILLISECONDS> argument as an integer");
-    let time_base = util::parse_rational(matches
-        .value_of("time_base")
-        .unwrap())
+        .expect("Unable to parse --iterations <ITERATIONS> argument as an integer");
+    let fractal_progress_interval = Duration::from_millis(
+        matches
+            .value_of("fractal_progress_interval")
+            .unwrap()
+            .parse::<u64>()
+            .expect(
+                "Unable to parse --fractal-progress-interval <MILLISECONDS> argument as an integer",
+            ),
+    );
+    let video_progress_interval = Duration::from_millis(
+        matches
+            .value_of("video_progress_interval")
+            .unwrap()
+            .parse::<u64>()
+            .expect(
+                "Unable to parse --video-progress-interval <MILLISECONDS> argument as an integer",
+            ),
+    );
+    let time_base = util::parse_rational(matches.value_of("time_base").unwrap())
         .expect("Unable to parse --time-base <FRACTION> argument as a fraction");
+
+    // get the path tolerance
+    let path_tolerance = matches
+        .value_of("path_tolerance")
+        .unwrap()
+        .parse::<f32>()
+        .expect("Unable to parse --path-tolerance <TOLERANCE> argument as a number");
 
     // get the flags
     let mandelbrot = matches.is_present("mandelbrot");
 
-    let mut media_out = output::MediaOutput::new(&output, image_width, image_height, time_base);
+    // open the media output
+    let mut media_out = output::MediaOutput::new(&output, image_width, image_height, time_base)
+        .expect("Unable to open the media output");
+    media_out.start().expect("Unable to start the media file");
 
-    //    let media_file = Path::new("fractal.webm");
-    //    let mut media_out = output::MediaOutput::new(&media_file, WIDTH,
-    // HEIGHT, (1, 30))        .expect("Unable to open a media output");
-    //    media_out.start().expect("Unable to start the media file");
-    //
-    //    let mut frame = frame::Video::new(Pixel::RGBA, WIDTH, HEIGHT);
-    //    for frame_num in 0..FRAMES {
-    //        frame.set_pts(Some(frame_num as i64));
-    //
-    //        let c_offset = frame_num as f64 / FRAMES as f64 * 2f64 - 1f64;
-    //        let c = Complex64::new(c_offset, c_offset);
-    //        let generator = generator::ValueGenerator::new(
-    //            IMAGE_SCALE,
-    //            IMAGE_SCALE,
-    //            PLANE_START_X,
-    //            PLANE_START_Y,
-    //            false,
-    //            100,
-    //            c,
-    //        );
-    //
-    //        let frame_data = frame.data_mut(0);
-    //        let fractal_image = generator::generate_fractal(
-    //            &generator,
-    //            WIDTH,
-    //            HEIGHT,
-    //            num_cpus::get() + 2,
-    //            |progress| {
-    //                println!("Fractal Generation Progress:");
-    //                print!(" ");
-    //                for f in progress {
-    //                    print!(" {:.2}%", f * 100f32);
-    //                }
-    //                println!();
-    //            },
-    //        )
-    //        .expect("Error generating fractal");
-    //
-    //        frame_data.copy_from_slice(&fractal_image);
-    //
-    //        println!("Writing frame: {}", frame_num);
-    //        media_out
-    //            .write_frame(&frame)
-    //            .expect("Unable to write a frame to the media file");
-    //    }
-    //    println!("Finishing...");
-    //    media_out
-    //        .finish()
-    //        .expect("Unable to finish writing the media file");
-    //    println!("Done.");
+    let fractal_arguments = FractalValues::new(image_width, image_height, plane_width, iterations);
+
+    // walk along the path to determine its length
+    let path_length = path_length::approximate_path_length(path.as_slice(), path_tolerance);
+
+    // get the length of each step
+    let step_length = path_length / frames as f32;
+
+    let video_progress_callback = |frame_num| {
+        println!("Generated {} frames out of {}", frame_num, frames);
+    };
+
+    let fractal_progress_callback = |progress| {
+        println!("Fractal Generation Progress:");
+        print!(" ");
+        for f in progress {
+            print!(" {:.2}%", f * 100f32);
+        }
+        println!();
+    };
+
+    if mandelbrot {
+        render_mandelbrot(
+            fractal_arguments,
+            &mut media_out,
+            path,
+            path_tolerance,
+            step_length,
+            video_progress_interval,
+            fractal_progress_interval,
+            &video_progress_callback,
+            &fractal_progress_callback,
+        );
+    } else {
+        render_julia(
+            fractal_arguments,
+            &mut media_out,
+            path,
+            path_tolerance,
+            step_length,
+            video_progress_interval,
+            fractal_progress_interval,
+            &video_progress_callback,
+            &fractal_progress_callback,
+        );
+    }
+
+    media_out
+        .finish()
+        .expect("Error finishing writing media file");
+}
+
+/// Renders the video as a Mandelbrot set with crosshairs tracing a path along
+/// it.
+fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
+    vals: FractalValues,
+    media_out: &mut output::MediaOutput,
+    path: lyon_path::Path,
+    path_tolerance: f32,
+    step_length: f32,
+    video_progress_interval: Duration,
+    fractal_progress_interval: Duration,
+    video_progress_callback: &V,
+    fractal_progress_callback: &F,
+) {
+    let generator = generator::ValueGenerator::new(
+        vals.image_scale,
+        vals.image_scale,
+        vals.plane_start_x,
+        vals.plane_start_y,
+        true,
+        vals.iterations,
+        Complex::<f64>::new(0f64, 0f64),
+    );
+
+    let mandelbrot_image = generator::generate_fractal(
+        &generator,
+        vals.image_width,
+        vals.image_height,
+        num_cpus::get() + 2,
+        fractal_progress_callback,
+        fractal_progress_interval,
+    )
+    .expect("Error generating Mandelbrot set");
+
+    let mut frame = frame::Video::new(format::Pixel::RGBA, vals.image_width, vals.image_height);
+    let mut frame_num = 0;
+    let mut previous_progress = Instant::now();
+
+    let mut pattern = RegularPattern {
+        callback: &mut |position: lyon_algorithms::math::Point, _, _| {
+            frame.set_pts(Some(frame_num as i64));
+            let mut current_image = mandelbrot_image.clone();
+
+            draw_crosshair(
+                &mut current_image,
+                vals,
+                Complex::<f64>::new(position.x as f64, position.y as f64),
+            );
+
+            frame.data_mut(0).copy_from_slice(&current_image);
+
+            media_out
+                .write_frame(&frame)
+                .expect("Unable to write frame");
+
+            // call the progress callback every now and then
+            let now = Instant::now();
+            if now.saturating_duration_since(previous_progress) > video_progress_interval {
+                video_progress_callback(frame_num);
+                previous_progress = now;
+            }
+
+            frame_num += 1;
+
+            true
+        },
+        interval: step_length,
+    };
+
+    walk::walk_along_path(path.iter().flattened(path_tolerance), 0f32, &mut pattern);
+}
+
+/// Renders the video as a Julia set following the specified path along the
+/// Mandelbrot set.
+fn render_julia<V: Fn(u32), F: Fn(Vec<f32>)>(
+    vals: FractalValues,
+    media_out: &mut output::MediaOutput,
+    path: lyon_path::Path,
+    path_tolerance: f32,
+    step_length: f32,
+    video_progress_interval: Duration,
+    fractal_progress_interval: Duration,
+    video_progress_callback: &V,
+    fractal_progress_callback: &F,
+) {
+    let mut frame = frame::Video::new(format::Pixel::RGBA, vals.image_width, vals.image_height);
+    let mut frame_num = 0;
+    let mut previous_progress = Instant::now();
+
+    let mut pattern = RegularPattern {
+        callback: &mut |position: lyon_algorithms::math::Point, _, _| {
+            frame.set_pts(Some(frame_num as i64));
+
+            let generator = generator::ValueGenerator::new(
+                vals.image_scale,
+                vals.image_scale,
+                vals.plane_start_x,
+                vals.plane_start_y,
+                false,
+                vals.iterations,
+                Complex::<f64>::new(position.x as f64, position.y as f64),
+            );
+
+            let julia_image = generator::generate_fractal(
+                &generator,
+                vals.image_width,
+                vals.image_height,
+                num_cpus::get() + 2,
+                fractal_progress_callback,
+                fractal_progress_interval,
+            )
+            .expect("Error generating Julia set");
+
+            frame.data_mut(0).copy_from_slice(&julia_image);
+
+            media_out
+                .write_frame(&frame)
+                .expect("Unable to write frame");
+
+            // call the progress callback every now and then
+            let now = Instant::now();
+            if now.saturating_duration_since(previous_progress) > video_progress_interval {
+                video_progress_callback(frame_num);
+                previous_progress = now;
+            }
+
+            frame_num += 1;
+
+            true
+        },
+        interval: step_length,
+    };
+
+    walk::walk_along_path(path.iter().flattened(path_tolerance), 0f32, &mut pattern);
 }
 
 /// Draws a crosshair at the specified location in the complex plane onto a u8
 /// buffer representing an RGBA image.
-fn draw_crosshair(
-    image: &mut [u8],
-    image_width: usize,
-    image_height: usize,
-    crosshair_coordinates: Complex<f64>,
-    generator: &ValueGenerator,
-) {
-    let (pixel_x, pixel_y) = generator.get_pixel_coordinates(crosshair_coordinates);
+fn draw_crosshair(image: &mut [u8], vals: FractalValues, crosshair_coordinates: Complex<f64>) {
+    let (pixel_x, pixel_y) = vals.get_pixel_coordinates(crosshair_coordinates);
 
-    for x in 0..image_width {
-        let index = (pixel_y as usize * image_width + x) * 4;
-        image[index] = 0xFFu8;
-        image[index + 1] = 0xFFu8;
-        image[index + 2] = 0xFFu8;
-        image[index + 3] = 0xFFu8;
+    if let Some(pixel_y) = pixel_y {
+        for x in 0..vals.image_width as usize {
+            let index = (pixel_y as usize * vals.image_width as usize + x) * 4;
+            image[index] = 0xFFu8;
+            image[index + 1] = 0xFFu8;
+            image[index + 2] = 0xFFu8;
+            image[index + 3] = 0xFFu8;
+        }
     }
 
-    for y in 0..image_height {
-        let index = (y * image_width + pixel_x as usize) * 4;
-        image[index] = 0xFFu8;
-        image[index + 1] = 0xFFu8;
-        image[index + 2] = 0xFFu8;
-        image[index + 3] = 0xFFu8;
+    if let Some(pixel_x) = pixel_x {
+        for y in 0..vals.image_height as usize {
+            let index = (y * vals.image_width as usize + pixel_x as usize) * 4;
+            image[index] = 0xFFu8;
+            image[index + 1] = 0xFFu8;
+            image[index + 2] = 0xFFu8;
+            image[index + 3] = 0xFFu8;
+        }
     }
 }

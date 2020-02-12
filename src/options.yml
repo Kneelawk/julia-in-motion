@@ -46,6 +46,13 @@ args:
       help: Sets the output path where the resulting video is stored.
       takes_value: true
       required: true
+  - iterations:
+      short: i
+      long: iterations
+      value_name: ITERATIONS
+      help: Sets the number of iterations used in the fractal calculation before it determines a pixel doesn't have a color.
+      takes_value: true
+      default_value: "100"
   - fractal_progress_interval:
       long: fractal-progress-interval
       value_name: MILLISECONDS
@@ -65,6 +72,12 @@ args:
       help: Set the time-base of the output video. What is the number of seconds between each frame?
       takes_value: true
       default_value: "1/30"
+  - path_tolerance:
+      long: path-tolerance
+      value_name: TOLERANCE
+      help: The tolerance for approximating curves in the path.
+      takes_value: true
+      default_value: "0.01"
   - mandelbrot:
       short: m
       long: mandelbrot

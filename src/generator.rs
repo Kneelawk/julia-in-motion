@@ -10,8 +10,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-const WAIT_DURATION: Duration = Duration::from_millis(1000);
-
 #[derive(Debug, Clone)]
 pub struct ValueGenerator {
     img_scale_x: f64,
@@ -61,6 +59,7 @@ pub fn generate_fractal<P: Fn(Vec<f32>)>(
     height: u32,
     num_threads: usize,
     progress_callback: P,
+    progress_interval: Duration,
 ) -> Result<Box<[u8]>, FractalGenerationError> {
     let mut threads = vec![];
 
@@ -99,7 +98,7 @@ pub fn generate_fractal<P: Fn(Vec<f32>)>(
 
         // send progress reports every now and then
         let now = Instant::now();
-        if now.saturating_duration_since(previous_progress) > WAIT_DURATION {
+        if now.saturating_duration_since(previous_progress) > progress_interval {
             let mut thread_progress = vec![];
             for thread in threads.iter() {
                 thread_progress.push(thread.get_progress());
@@ -147,7 +146,7 @@ impl ValueGenerator {
 
         let mut n = 0;
         while n < self.iterations {
-            if z.norm_sqr() > 1f64 {
+            if z.norm_sqr() > 4f64 {
                 break;
             }
 
@@ -160,13 +159,6 @@ impl ValueGenerator {
 
     pub fn gen_pixel_value(&self, x: u32, y: u32) -> u32 {
         self.gen_value(self.get_plane_coordinates((x, y)))
-    }
-
-    pub fn get_pixel_coordinates(&self, plane_coordinates: Complex<f64>) -> (u32, u32) {
-        (
-            ((plane_coordinates.re - self.plane_zero_x) / self.img_scale_x) as u32,
-            ((plane_coordinates.im - self.plane_zero_y) / self.img_scale_y) as u32,
-        )
     }
 
     pub fn get_plane_coordinates(&self, (x, y): (u32, u32)) -> Complex<f64> {
