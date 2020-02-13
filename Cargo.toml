@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 ffmpeg4 = "0.4.0"
+ffmpeg4-sys = "4.2.2"
 lazy_static = "1.4.0"
 lyon_algorithms = "0.15.0"
 lyon_path = "0.15.1"

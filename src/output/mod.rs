@@ -1,6 +1,8 @@
 use ffmpeg4::{codec, encoder, format, frame, media, software, util, Packet, Rational};
 use std::{option::NoneError, path::Path};
 
+mod extra;
+
 pub struct MediaOutput {
     format_context: format::context::Output,
     encoder: codec::encoder::Video,
@@ -36,7 +38,8 @@ impl MediaOutput {
 
         encoder.set_frame_rate(Some((30, 1)));
         encoder.set_format(format::Pixel::YUV420P);
-        encoder.set_bit_rate(960000);
+        encoder.set_bit_rate(0);
+        extra::codec_opt_set_str(&mut encoder, "crf", "30")?;
         encoder.set_width(width);
         encoder.set_height(height);
         encoder.set_time_base(time_base);

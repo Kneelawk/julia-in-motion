@@ -319,6 +319,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ffmpeg4",
+ "ffmpeg4-sys",
  "lazy_static",
  "lyon_algorithms",
  "lyon_path",
