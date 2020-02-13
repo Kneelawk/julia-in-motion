@@ -1,22 +1,5 @@
 use crate::{fractal_info, fractal_info::ConstrainedValue};
-use num_complex::Complex;
-use rusttype::{Font, Point, Scale};
-
-/// Draws a crosshair at the specified location in the complex plane onto a u8
-/// buffer representing an RGBA image.
-pub fn draw_crosshair_at_complex(
-    image: &mut [u8],
-    info: fractal_info::FractalInfo,
-    location: Complex<f64>,
-) {
-    let (pixel_x, pixel_y) = info.get_pixel_coordinates(location);
-    draw_constrained_crosshair(
-        image,
-        info.image_width,
-        info.image_height,
-        (pixel_x, pixel_y),
-    );
-}
+use rusttype::{Font, Scale};
 
 // Draws a crosshair at the specified pixel location if within the constraint.
 pub fn draw_constrained_crosshair(

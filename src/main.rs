@@ -214,7 +214,7 @@ fn render_mandelbrot<V: Fn(u32), F: Fn(Vec<f32>)>(
                 (pixel_x, pixel_y),
             );
 
-            let complex_str = format!("{}", complex);
+            let complex_str = format!("{:.5} + {:.5}i", complex.re, complex.im);
             raster::draw_constrained_glyph_line(
                 &mut current_image,
                 info.image_width,

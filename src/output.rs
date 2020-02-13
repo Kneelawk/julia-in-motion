@@ -19,7 +19,7 @@ impl MediaOutput {
     ) -> Result<MediaOutput, MediaOutputCreationError> {
         let time_base = time_base.into();
         let mut format_context = format::output(path)?;
-        let codec_context =
+        let codec =
             encoder::find(format_context.format().codec(path, media::Type::Video))?.video()?;
 
         let global_header = format_context
@@ -27,7 +27,7 @@ impl MediaOutput {
             .flags()
             .contains(format::Flags::GLOBAL_HEADER);
 
-        let mut output = format_context.add_stream(codec_context)?;
+        let mut output = format_context.add_stream(codec)?;
         let mut encoder = output.codec().encoder().video()?;
 
         if global_header {
@@ -42,7 +42,7 @@ impl MediaOutput {
         encoder.set_time_base(time_base);
         output.set_time_base(time_base);
 
-        let encoder = encoder.open_as(codec_context)?;
+        let encoder = encoder.open_as(codec)?;
 
         output.set_parameters(&encoder);
 
