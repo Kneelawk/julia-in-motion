@@ -70,9 +70,9 @@ impl MediaOutput {
         frame: &frame::Video,
     ) -> Result<MediaWriteResult, MediaWriteError> {
         self.converter.run(frame, &mut self.converted)?;
+        self.converted.set_pts(frame.pts());
 
         if self.encoder.encode(&self.converted, &mut self.encoded)? {
-            self.encoded.set_pts(frame.pts());
             self.encoded.set_stream(0);
             self.encoded.rescale_ts(
                 self.in_time_base,
@@ -87,7 +87,10 @@ impl MediaOutput {
     }
 
     pub fn finish(&mut self) -> Result<MediaWriteResult, MediaWriteError> {
-        let res = if self.encoder.flush(&mut self.encoded)? {
+        let mut res = MediaWriteResult::NoPacketWritten;
+
+        // sometimes there are a bunch of unwritten frames
+        while self.encoder.flush(&mut self.encoded)? {
             self.encoded.set_stream(0);
             self.encoded.rescale_ts(
                 self.in_time_base,
@@ -95,10 +98,8 @@ impl MediaOutput {
             );
             self.encoded.write_interleaved(&mut self.format_context)?;
 
-            MediaWriteResult::PacketWritten
-        } else {
-            MediaWriteResult::NoPacketWritten
-        };
+            res = MediaWriteResult::PacketWritten;
+        }
 
         self.format_context.write_trailer()?;
 
