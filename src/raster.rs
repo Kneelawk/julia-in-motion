@@ -1,20 +1,23 @@
-use crate::{fractal_info, fractal_info::ConstrainedValue};
 use rusttype::{Font, Scale};
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ConstrainedValue<T> {
+    LessThanConstraint,
+    WithinConstraint(T),
+    GreaterThanConstraint,
+}
 
 // Draws a crosshair at the specified pixel location if within the constraint.
 pub fn draw_constrained_crosshair(
     image: &mut [u8],
     image_width: u32,
     image_height: u32,
-    (pixel_x, pixel_y): (
-        fractal_info::ConstrainedValue<u32>,
-        fractal_info::ConstrainedValue<u32>,
-    ),
+    (pixel_x, pixel_y): (ConstrainedValue<u32>, ConstrainedValue<u32>),
 ) {
-    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_y) = pixel_y {
+    if let ConstrainedValue::WithinConstraint(pixel_y) = pixel_y {
         draw_horizontal_line(image, image_width, pixel_y);
     }
-    if let fractal_info::ConstrainedValue::WithinConstraint(pixel_x) = pixel_x {
+    if let ConstrainedValue::WithinConstraint(pixel_x) = pixel_x {
         draw_vertical_line(image, image_width, image_height, pixel_x);
     }
 }
@@ -49,10 +52,7 @@ pub fn draw_constrained_glyph_line(
     image_height: u32,
     font: &Font,
     scale: Scale,
-    (x, y): (
-        fractal_info::ConstrainedValue<u32>,
-        fractal_info::ConstrainedValue<u32>,
-    ),
+    (x, y): (ConstrainedValue<u32>, ConstrainedValue<u32>),
     margin: f32,
     string: &str,
 ) {
