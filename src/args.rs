@@ -1,4 +1,4 @@
-use crate::util;
+use crate::{generator, util};
 use ffmpeg4::Rational;
 use std::{
     fmt::{Display, Error, Formatter},
@@ -21,6 +21,7 @@ pub struct CmdArgs {
     pub video_progress_interval: Duration,
     pub time_base: Rational,
     pub path_tolerance: f32,
+    pub smoothing: generator::args::Smoothing,
     pub mandelbrot: bool,
 }
 
@@ -98,6 +99,13 @@ impl CmdArgs {
             .parse::<f32>()
             .map_err(|e| CmdArgsLoadError::from_float("path-tolerance", e))?;
 
+        // get the kind of smoothing to use
+        let smoothing = matches
+            .value_of("smoothing")
+            .unwrap()
+            .parse::<generator::args::Smoothing>()
+            .map_err(|e| CmdArgsLoadError::from_smoothing("smoothing", e))?;
+
         // get the flags
         let mandelbrot = matches.is_present("mandelbrot");
 
@@ -113,6 +121,7 @@ impl CmdArgs {
             video_progress_interval,
             time_base,
             path_tolerance,
+            smoothing,
             mandelbrot,
         })
     }
@@ -133,6 +142,7 @@ pub enum ParseErrorCause {
     ParseIntError(ParseIntError),
     ParsePathError(lyon_svg::path_utils::ParseError),
     ParseRationalError(util::ParseRationalError),
+    ParseSmoothingError(generator::args::ParseSmoothingError),
 }
 
 impl CmdArgsLoadError {
@@ -161,6 +171,16 @@ impl CmdArgsLoadError {
         CmdArgsLoadError::ParseError {
             argument: argument.to_owned(),
             cause: ParseErrorCause::ParseRationalError(error),
+        }
+    }
+
+    pub fn from_smoothing(
+        argument: &str,
+        error: generator::args::ParseSmoothingError,
+    ) -> CmdArgsLoadError {
+        CmdArgsLoadError::ParseError {
+            argument: argument.to_owned(),
+            cause: ParseErrorCause::ParseSmoothingError(error),
         }
     }
 }

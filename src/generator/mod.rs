@@ -1,3 +1,4 @@
+use args::Smoothing;
 use num_complex::Complex;
 use std::{
     intrinsics::transmute,
@@ -10,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub mod args;
+
 #[derive(Debug, Clone)]
 pub struct ValueGenerator {
     img_scale_x: f64,
@@ -18,6 +21,7 @@ pub struct ValueGenerator {
     plane_zero_y: f64,
     mandelbrot: bool,
     iterations: u32,
+    smoothing: Smoothing,
     c: Complex<f64>,
 }
 
@@ -122,6 +126,7 @@ impl ValueGenerator {
         plane_zero_y: f64,
         mandelbrot: bool,
         iterations: u32,
+        smoothing: Smoothing,
         c: Complex<f64>,
     ) -> ValueGenerator {
         ValueGenerator {
@@ -131,33 +136,41 @@ impl ValueGenerator {
             plane_zero_y,
             mandelbrot,
             iterations,
+            smoothing,
             c,
         }
     }
 
     /// Gets the value at a specific location on the fractal described by this
     /// ValueGenerator.
-    pub fn gen_value(&self, loc: Complex<f64>) -> u32 {
-        let (mut z, c) = if self.mandelbrot {
+    pub fn gen_value(&self, loc: Complex<f64>) -> f64 {
+        let (mut z, c): (Complex<f64>, Complex<f64>) = if self.mandelbrot {
             (Complex::<f64>::new(0f64, 0f64), loc)
         } else {
             (loc, self.c)
         };
 
+        let mut z_prev = z;
+
+        let radius_squared = self.smoothing.radius_squared();
+
         let mut n = 0;
         while n < self.iterations {
-            if z.norm_sqr() > 4f64 {
+            if z.norm_sqr() > radius_squared {
                 break;
             }
+
+            z_prev = z;
 
             z = z * z + c;
 
             n += 1;
         }
-        n
+
+        self.smoothing.smooth(n, z, z_prev)
     }
 
-    pub fn gen_pixel_value(&self, x: u32, y: u32) -> u32 {
+    pub fn gen_pixel_value(&self, x: u32, y: u32) -> f64 {
         self.gen_value(self.get_plane_coordinates((x, y)))
     }
 
@@ -168,12 +181,12 @@ impl ValueGenerator {
         )
     }
 
-    pub fn gen_color(&self, value: u32) -> RGBAColor {
-        if value < self.iterations {
+    pub fn gen_color(&self, value: f64) -> RGBAColor {
+        if value < self.iterations as f64 {
             RGBAColor::from_hsb(
-                mod2(value as f64 * 3.3f64, 0f64, 256f64) / 256f64,
+                mod2(value * 3.3f64, 0f64, 256f64) / 256f64,
                 1f64,
-                mod2(value as f64 * 16f64, 0f64, 256f64) / 256f64,
+                mod2(value * 16f64, 0f64, 256f64) / 256f64,
                 1f64,
             )
         } else {

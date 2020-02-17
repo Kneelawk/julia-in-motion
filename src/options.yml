@@ -78,6 +78,12 @@ args:
       help: The tolerance for approximating curves in the path.
       takes_value: true
       default_value: "0.01"
+  - smoothing:
+      long: smoothing
+      value_name: SMOOTHING
+      help: Set what kind of smoothing to use when evaluating the iterations of each pixel.
+      takes_value: true
+      default_value: "LogarithmicDistance(4, 2)"
   - mandelbrot:
       short: m
       long: mandelbrot

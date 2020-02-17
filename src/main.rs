@@ -46,6 +46,7 @@ struct Application<'a> {
     plane_start_x: f64,
     plane_start_y: f64,
     iterations: u32,
+    smoothing: generator::args::Smoothing,
     mandelbrot: bool,
     font: Font<'a>,
     media_out: output::MediaOutput,
@@ -84,6 +85,7 @@ impl Application<'_> {
             plane_start_x: -args.plane_width / 2f64,
             plane_start_y: -plane_height / 2f64,
             iterations: args.iterations,
+            smoothing: args.smoothing,
             mandelbrot: args.mandelbrot,
             font,
             media_out,
@@ -120,6 +122,7 @@ impl Application<'_> {
             self.plane_start_y,
             true,
             self.iterations,
+            self.smoothing,
             Complex::<f64>::new(0f64, 0f64),
         );
 
@@ -218,6 +221,7 @@ impl Application<'_> {
                     self.plane_start_y,
                     false,
                     self.iterations,
+                    self.smoothing,
                     Complex::<f64>::new(position.x as f64, position.y as f64),
                 );
 
