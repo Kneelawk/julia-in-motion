@@ -54,7 +54,13 @@ impl Smoothing {
                     return iterations as f64;
                 }
 
-                // FIXME incredibly slow
+                if z_previous.norm_sqr() > DEFAULT_RADIUS_SQUARED {
+                    return iterations as f64;
+                }
+
+                if z_current.norm_sqr() < DEFAULT_RADIUS_SQUARED {
+                    return iterations as f64;
+                }
 
                 let ax = z_previous.re;
                 let ay = z_previous.im;
@@ -64,12 +70,12 @@ impl Smoothing {
                 let dy = by - ay;
 
                 iterations as f64
-                    - if dx.abs() > dy {
+                    - if dx.abs() > dy.abs() {
                         let m = dy / dx;
                         let m_squared = m * m;
                         let p = m * ax - ay;
 
-                        (if bx > ax {
+                        (bx - if bx > ax {
                             (m * p
                                 + (DEFAULT_RADIUS_SQUARED * m_squared + DEFAULT_RADIUS_SQUARED
                                     - p * p)
@@ -81,14 +87,13 @@ impl Smoothing {
                                     - p * p)
                                     .sqrt())
                                 / (m_squared + 1f64)
-                        } - ax)
-                            / dx
+                        }) / dx
                     } else {
                         let m = dx / dy;
                         let m_squared = m * m;
                         let p = m * ay - ax;
 
-                        (if by > ay {
+                        (by - if by > ay {
                             (m * p
                                 + (DEFAULT_RADIUS_SQUARED * m_squared + DEFAULT_RADIUS_SQUARED
                                     - p * p)
@@ -100,8 +105,7 @@ impl Smoothing {
                                     - p * p)
                                     .sqrt())
                                 / (m_squared + 1f64)
-                        } - ay)
-                            / dy
+                        }) / dy
                     }
             }
         }
