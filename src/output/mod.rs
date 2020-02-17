@@ -1,4 +1,5 @@
-use ffmpeg4::{codec, encoder, format, frame, media, software, util, Packet, Rational};
+use extra::OptionSettable;
+use ffmpeg4::{codec, encoder, format, frame, media, software, Packet, Rational};
 use std::{option::NoneError, path::Path};
 
 mod extra;
@@ -39,7 +40,7 @@ impl MediaOutput {
         encoder.set_frame_rate(Some((30, 1)));
         encoder.set_format(format::Pixel::YUV420P);
         encoder.set_bit_rate(0);
-        extra::codec_opt_set_str(&mut encoder, "crf", "30")?;
+        encoder.opt_set_str("crf", "30")?;
         encoder.set_width(width);
         encoder.set_height(height);
         encoder.set_time_base(time_base);
@@ -112,12 +113,12 @@ impl MediaOutput {
 
 #[derive(Clone, Debug)]
 pub enum MediaOutputCreationError {
-    FfmpegError(util::error::Error),
+    FfmpegError(ffmpeg4::Error),
     MissingComponentError,
 }
 
-impl From<util::error::Error> for MediaOutputCreationError {
-    fn from(e: util::error::Error) -> Self {
+impl From<ffmpeg4::Error> for MediaOutputCreationError {
+    fn from(e: ffmpeg4::Error) -> Self {
         MediaOutputCreationError::FfmpegError(e)
     }
 }
@@ -130,12 +131,12 @@ impl From<NoneError> for MediaOutputCreationError {
 
 #[derive(Clone, Debug)]
 pub enum MediaWriteError {
-    FfmpegError(util::error::Error),
+    FfmpegError(ffmpeg4::Error),
     MissingComponentError,
 }
 
-impl From<util::error::Error> for MediaWriteError {
-    fn from(e: util::error::Error) -> Self {
+impl From<ffmpeg4::Error> for MediaWriteError {
+    fn from(e: ffmpeg4::Error) -> Self {
         MediaWriteError::FfmpegError(e)
     }
 }
