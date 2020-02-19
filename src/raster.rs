@@ -1,11 +1,5 @@
 use rusttype::{Font, Scale};
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ConstrainedValue<T> {
-    LessThanConstraint,
-    WithinConstraint(T),
-    GreaterThanConstraint,
-}
+use crate::generator::view::ConstrainedValue;
 
 // Draws a crosshair at the specified pixel location if within the constraint.
 pub fn draw_constrained_crosshair(

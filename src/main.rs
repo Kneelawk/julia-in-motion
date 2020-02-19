@@ -1,6 +1,5 @@
 #![feature(try_trait)]
 
-use crate::raster::ConstrainedValue;
 use ffmpeg4::{format, frame};
 use lyon_algorithms::{walk, walk::RegularPattern};
 use lyon_path::iterator::PathIterator;
@@ -40,11 +39,7 @@ fn main() {
 }
 
 struct Application<'a> {
-    image_width: u32,
-    image_height: u32,
-    image_scale: f64,
-    plane_start_x: f64,
-    plane_start_y: f64,
+    view: generator::view::View,
     iterations: u32,
     smoothing: generator::args::Smoothing,
     mandelbrot: bool,
@@ -60,9 +55,6 @@ struct Application<'a> {
 
 impl Application<'_> {
     pub fn new(args: args::CmdArgs, font: Font) -> Result<Application, ApplicationCreationError> {
-        let image_scale = args.plane_width / args.image_width as f64;
-        let plane_height = args.image_height as f64 * image_scale;
-
         // open the media output
         let media_out = output::MediaOutput::new(
             &args.output,
@@ -79,11 +71,11 @@ impl Application<'_> {
         let step_length = path_length / args.frames as f32;
 
         Ok(Application {
-            image_width: args.image_width,
-            image_height: args.image_height,
-            image_scale,
-            plane_start_x: -args.plane_width / 2f64,
-            plane_start_y: -plane_height / 2f64,
+            view: generator::view::View::new_uniform(
+                args.image_width,
+                args.image_height,
+                args.plane_width,
+            ),
             iterations: args.iterations,
             smoothing: args.smoothing,
             mandelbrot: args.mandelbrot,
@@ -116,10 +108,7 @@ impl Application<'_> {
     /// along it.
     fn render_mandelbrot(&mut self) -> Result<(), ApplicationRunError> {
         let generator = generator::ValueGenerator::new(
-            self.image_scale,
-            self.image_scale,
-            self.plane_start_x,
-            self.plane_start_y,
+            self.view,
             true,
             self.iterations,
             self.smoothing,
@@ -128,14 +117,12 @@ impl Application<'_> {
 
         let mandelbrot_image = generator::generate_fractal(
             &generator,
-            self.image_width,
-            self.image_height,
             num_cpus::get() + 2,
             |progress| self.fractal_progress_callback(progress),
             self.fractal_progress_interval,
         )?;
 
-        let mut frame = frame::Video::new(format::Pixel::RGBA, self.image_width, self.image_height);
+        let mut frame = frame::Video::new(format::Pixel::RGBA, self.view.image_width, self.view.image_height);
         let mut frame_num = 0;
         let mut previous_progress = Instant::now();
         let mut error = None;
@@ -150,20 +137,20 @@ impl Application<'_> {
                 let mut current_image = mandelbrot_image.clone();
 
                 let complex = Complex::<f64>::new(position.x as f64, position.y as f64);
-                let (pixel_x, pixel_y) = self.get_pixel_coordinates(complex);
+                let (pixel_x, pixel_y) = self.view.get_pixel_coordinates(complex);
 
                 raster::draw_constrained_crosshair(
                     &mut current_image,
-                    self.image_width,
-                    self.image_height,
+                    self.view.image_width,
+                    self.view.image_height,
                     (pixel_x, pixel_y),
                 );
 
                 let complex_str = format!("{:.5} + {:.5}i", complex.re, complex.im);
                 raster::draw_constrained_glyph_line(
                     &mut current_image,
-                    self.image_width,
-                    self.image_height,
+                    self.view.image_width,
+                    self.view.image_height,
                     &self.font,
                     Scale::uniform(12f32),
                     (pixel_x, pixel_y),
@@ -201,7 +188,7 @@ impl Application<'_> {
     /// Renders the video as a Julia set following the specified path along the
     /// Mandelbrot set.
     fn render_julia(&mut self) -> Result<(), ApplicationRunError> {
-        let mut frame = frame::Video::new(format::Pixel::RGBA, self.image_width, self.image_height);
+        let mut frame = frame::Video::new(format::Pixel::RGBA, self.view.image_width, self.view.image_height);
         let mut frame_num = 0;
         let mut previous_progress = Instant::now();
         let mut error = None;
@@ -215,10 +202,7 @@ impl Application<'_> {
                 frame.set_pts(Some(frame_num as i64));
 
                 let generator = generator::ValueGenerator::new(
-                    self.image_scale,
-                    self.image_scale,
-                    self.plane_start_x,
-                    self.plane_start_y,
+                    self.view,
                     false,
                     self.iterations,
                     self.smoothing,
@@ -228,8 +212,6 @@ impl Application<'_> {
                 let julia_image = path_walk_try!(
                     generator::generate_fractal(
                         &generator,
-                        self.image_width,
-                        self.image_height,
                         num_cpus::get() + 2,
                         |progress| self.fractal_progress_callback(progress),
                         self.fractal_progress_interval,
@@ -275,36 +257,6 @@ impl Application<'_> {
 
     fn video_progress_callback(&self, frame_num: u32) {
         println!("Generated {} frames out of {}", frame_num, self.frames);
-    }
-
-    fn get_pixel_coordinates(
-        &self,
-        plane_coordinates: Complex<f64>,
-    ) -> (ConstrainedValue<u32>, ConstrainedValue<u32>) {
-        (
-            if plane_coordinates.re > self.plane_start_x {
-                let x = ((plane_coordinates.re - self.plane_start_x) / self.image_scale) as u32;
-
-                if x < self.image_width {
-                    ConstrainedValue::WithinConstraint(x)
-                } else {
-                    ConstrainedValue::GreaterThanConstraint
-                }
-            } else {
-                ConstrainedValue::LessThanConstraint
-            },
-            if plane_coordinates.im > self.plane_start_y {
-                let y = ((plane_coordinates.im - self.plane_start_y) / self.image_scale) as u32;
-
-                if y < self.image_height {
-                    ConstrainedValue::WithinConstraint(y)
-                } else {
-                    ConstrainedValue::GreaterThanConstraint
-                }
-            } else {
-                ConstrainedValue::LessThanConstraint
-            },
-        )
     }
 }
 

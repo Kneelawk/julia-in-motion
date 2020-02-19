@@ -12,13 +12,11 @@ use std::{
 };
 
 pub mod args;
+pub mod view;
 
 #[derive(Debug, Clone)]
 pub struct ValueGenerator {
-    img_scale_x: f64,
-    img_scale_y: f64,
-    plane_zero_x: f64,
-    plane_zero_y: f64,
+    view: view::View,
     mandelbrot: bool,
     iterations: u32,
     smoothing: Smoothing,
@@ -59,12 +57,13 @@ pub enum FractalGenerationError {}
 
 pub fn generate_fractal<P: Fn(Vec<f32>)>(
     generator: &ValueGenerator,
-    width: u32,
-    height: u32,
     num_threads: usize,
     progress_callback: P,
     progress_interval: Duration,
 ) -> Result<Box<[u8]>, FractalGenerationError> {
+    let width = generator.view.image_width;
+    let height = generator.view.image_height;
+
     let mut threads = vec![];
 
     for i in 0..num_threads {
@@ -120,20 +119,14 @@ pub fn generate_fractal<P: Fn(Vec<f32>)>(
 impl ValueGenerator {
     /// Creates a new ValueGenerator.
     pub fn new(
-        img_scale_x: f64,
-        img_scale_y: f64,
-        plane_zero_x: f64,
-        plane_zero_y: f64,
+        view: view::View,
         mandelbrot: bool,
         iterations: u32,
         smoothing: Smoothing,
         c: Complex<f64>,
     ) -> ValueGenerator {
         ValueGenerator {
-            img_scale_x,
-            img_scale_y,
-            plane_zero_x,
-            plane_zero_y,
+            view,
             mandelbrot,
             iterations,
             smoothing,
@@ -171,14 +164,7 @@ impl ValueGenerator {
     }
 
     pub fn gen_pixel_value(&self, x: u32, y: u32) -> f64 {
-        self.gen_value(self.get_plane_coordinates((x, y)))
-    }
-
-    pub fn get_plane_coordinates(&self, (x, y): (u32, u32)) -> Complex<f64> {
-        Complex::<f64>::new(
-            x as f64 * self.img_scale_x + self.plane_zero_x,
-            y as f64 * self.img_scale_y + self.plane_zero_y,
-        )
+        self.gen_value(self.view.get_plane_coordinates((x, y)))
     }
 
     pub fn gen_color(&self, value: f64) -> RGBAColor {
