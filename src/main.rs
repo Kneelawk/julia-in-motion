@@ -1,8 +1,6 @@
 #![feature(try_trait)]
 
 use ffmpeg4::{format, frame};
-use lyon_algorithms::{walk, walk::RegularPattern};
-use lyon_path::iterator::PathIterator;
 use num_complex::Complex;
 use rusttype::{Font, Scale};
 use std::time::{Duration, Instant};
@@ -10,21 +8,9 @@ use std::time::{Duration, Instant};
 mod args;
 mod generator;
 mod output;
-mod path_length;
+mod path_util;
 mod raster;
 mod util;
-
-macro_rules! path_walk_try {
-    ($expr:expr, $error:ident) => {
-        match $expr {
-            Ok(value) => value,
-            Err(err) => {
-                $error = Some(err.into());
-                return false;
-            }
-        }
-    };
-}
 
 const FONT_DATA: &[u8] = include_bytes!("OxygenMono-Regular.ttf");
 
@@ -65,7 +51,7 @@ impl Application<'_> {
 
         // walk along the path to determine its length
         let path_length =
-            path_length::approximate_path_length(args.path.as_slice(), args.path_tolerance);
+            path_util::approximate_path_length(args.path.as_slice(), args.path_tolerance);
 
         // get the length of each step
         let step_length = path_length / args.frames as f32;
@@ -122,128 +108,107 @@ impl Application<'_> {
             self.fractal_progress_interval,
         )?;
 
-        let mut frame = frame::Video::new(format::Pixel::RGBA, self.view.image_width, self.view.image_height);
+        let mut frame = frame::Video::new(
+            format::Pixel::RGBA,
+            self.view.image_width,
+            self.view.image_height,
+        );
         let mut frame_num = 0;
         let mut previous_progress = Instant::now();
-        let mut error = None;
 
-        let step_length = self.step_length;
-        let path = self.path.clone();
-        let path_tolerance = self.path_tolerance;
+        let points =
+            path_util::path_points(self.path.as_slice(), self.path_tolerance, self.step_length);
 
-        let mut pattern = RegularPattern {
-            callback: &mut |position: lyon_algorithms::math::Point, _, _| {
-                frame.set_pts(Some(frame_num as i64));
-                let mut current_image = mandelbrot_image.clone();
+        for position in points {
+            frame.set_pts(Some(frame_num as i64));
+            let mut current_image = mandelbrot_image.clone();
 
-                let complex = Complex::<f64>::new(position.x as f64, position.y as f64);
-                let (pixel_x, pixel_y) = self.view.get_pixel_coordinates(complex);
+            let complex = Complex::<f64>::new(position.x as f64, position.y as f64);
+            let (pixel_x, pixel_y) = self.view.get_pixel_coordinates(complex);
 
-                raster::draw_constrained_crosshair(
-                    &mut current_image,
-                    self.view.image_width,
-                    self.view.image_height,
-                    (pixel_x, pixel_y),
-                );
+            raster::draw_constrained_crosshair(
+                &mut current_image,
+                self.view.image_width,
+                self.view.image_height,
+                (pixel_x, pixel_y),
+            );
 
-                let complex_str = format!("{:.5} + {:.5}i", complex.re, complex.im);
-                raster::draw_constrained_glyph_line(
-                    &mut current_image,
-                    self.view.image_width,
-                    self.view.image_height,
-                    &self.font,
-                    Scale::uniform(12f32),
-                    (pixel_x, pixel_y),
-                    4f32,
-                    &complex_str,
-                );
+            let complex_str = format!("{:.5} + {:.5}i", complex.re, complex.im);
+            raster::draw_constrained_glyph_line(
+                &mut current_image,
+                self.view.image_width,
+                self.view.image_height,
+                &self.font,
+                Scale::uniform(12f32),
+                (pixel_x, pixel_y),
+                4f32,
+                &complex_str,
+            );
 
-                frame.data_mut(0).copy_from_slice(&current_image);
+            frame.data_mut(0).copy_from_slice(&current_image);
 
-                path_walk_try!(self.media_out.write_frame(&frame), error);
+            self.media_out.write_frame(&frame)?;
 
-                // call the progress callback every now and then
-                let now = Instant::now();
-                if now.saturating_duration_since(previous_progress) > self.video_progress_interval {
-                    self.video_progress_callback(frame_num);
-                    previous_progress = now;
-                }
+            // call the progress callback every now and then
+            let now = Instant::now();
+            if now.saturating_duration_since(previous_progress) > self.video_progress_interval {
+                self.video_progress_callback(frame_num);
+                previous_progress = now;
+            }
 
-                frame_num += 1;
-
-                error.is_none()
-            },
-            interval: step_length,
-        };
-
-        walk::walk_along_path(path.iter().flattened(path_tolerance), 0f32, &mut pattern);
-
-        if let Some(error) = error {
-            Err(error)
-        } else {
-            Ok(())
+            frame_num += 1;
         }
+
+        Ok(())
     }
 
     /// Renders the video as a Julia set following the specified path along the
     /// Mandelbrot set.
     fn render_julia(&mut self) -> Result<(), ApplicationRunError> {
-        let mut frame = frame::Video::new(format::Pixel::RGBA, self.view.image_width, self.view.image_height);
+        let mut frame = frame::Video::new(
+            format::Pixel::RGBA,
+            self.view.image_width,
+            self.view.image_height,
+        );
         let mut frame_num = 0;
         let mut previous_progress = Instant::now();
-        let mut error = None;
 
-        let step_length = self.step_length;
-        let path = self.path.clone();
-        let path_tolerance = self.path_tolerance;
+        let points =
+            path_util::path_points(self.path.as_slice(), self.path_tolerance, self.step_length);
 
-        let mut pattern = RegularPattern {
-            callback: &mut |position: lyon_algorithms::math::Point, _, _| {
-                frame.set_pts(Some(frame_num as i64));
+        for position in points {
+            frame.set_pts(Some(frame_num as i64));
 
-                let generator = generator::ValueGenerator::new(
-                    self.view,
-                    false,
-                    self.iterations,
-                    self.smoothing,
-                    Complex::<f64>::new(position.x as f64, position.y as f64),
-                );
+            let generator = generator::ValueGenerator::new(
+                self.view,
+                false,
+                self.iterations,
+                self.smoothing,
+                Complex::<f64>::new(position.x as f64, position.y as f64),
+            );
 
-                let julia_image = path_walk_try!(
-                    generator::generate_fractal(
-                        &generator,
-                        num_cpus::get() + 2,
-                        |progress| self.fractal_progress_callback(progress),
-                        self.fractal_progress_interval,
-                    ),
-                    error
-                );
+            let julia_image = generator::generate_fractal(
+                &generator,
+                num_cpus::get() + 2,
+                |progress| self.fractal_progress_callback(progress),
+                self.fractal_progress_interval,
+            )?;
 
-                frame.data_mut(0).copy_from_slice(&julia_image);
+            frame.data_mut(0).copy_from_slice(&julia_image);
 
-                path_walk_try!(self.media_out.write_frame(&frame), error);
+            self.media_out.write_frame(&frame)?;
 
-                // call the progress callback every now and then
-                let now = Instant::now();
-                if now.saturating_duration_since(previous_progress) > self.video_progress_interval {
-                    self.video_progress_callback(frame_num);
-                    previous_progress = now;
-                }
+            // call the progress callback every now and then
+            let now = Instant::now();
+            if now.saturating_duration_since(previous_progress) > self.video_progress_interval {
+                self.video_progress_callback(frame_num);
+                previous_progress = now;
+            }
 
-                frame_num += 1;
-
-                error.is_none()
-            },
-            interval: step_length,
-        };
-
-        walk::walk_along_path(path.iter().flattened(path_tolerance), 0f32, &mut pattern);
-
-        if let Some(error) = error {
-            Err(error)
-        } else {
-            Ok(())
+            frame_num += 1;
         }
+
+        Ok(())
     }
 
     fn fractal_progress_callback(&self, progress: Vec<f32>) {

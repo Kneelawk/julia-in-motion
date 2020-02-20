@@ -1,5 +1,5 @@
-use rusttype::{Font, Scale};
 use crate::generator::view::ConstrainedValue;
+use rusttype::{Font, Scale};
 
 // Draws a crosshair at the specified pixel location if within the constraint.
 pub fn draw_constrained_crosshair(
